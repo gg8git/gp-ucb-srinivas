@@ -48,6 +48,14 @@ def expected_improvement(model, likelihood, X, y_best):
         normal = Normal(0, 1)
         return (y_best - mu) * normal.cdf(Z) + sigma * normal.log_prob(Z).exp()
 
+def thompson_sampling(model, likelihood, X, n_samples=1):
+    model.eval(); likelihood.eval()
+    with torch.no_grad(), gpytorch.settings.fast_pred_var():
+        posterior = likelihood(model(X))
+        # Sample from the GP posterior
+        samples = posterior.rsample(torch.Size([n_samples]))  # [n_samples, |X|]
+        return samples.mean(dim=0)  # average if n_samples > 1
+
 # -----------------------------
 # Utilities
 # -----------------------------
@@ -86,6 +94,9 @@ def run_bo(f, policy, T=100, lengthscale=1.0, n_init=5):
             y_best = train_y.min()
             acq = expected_improvement(model, likelihood, Xcand, y_best)
             x_next = Xcand[torch.argmax(acq)]
+        elif policy == 'ts':
+            acq = thompson_sampling(model, likelihood, Xcand)
+            x_next = Xcand[torch.argmin(acq)]
         elif policy == 'random':
             x_next = sample_uniform(1, f.bounds).squeeze(0)
         else:
